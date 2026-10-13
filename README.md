@@ -8,6 +8,7 @@ A [Sine](https://github.com/CosmoCreeper/Sine) JavaScript mod for Zen Browser. D
 - **Later splits:** drop anywhere inside the pane you want to divide. A wide pane divides into left/right halves; a tall pane divides into top/bottom halves. The pointer chooses which half receives the new link. A square pane uses the first-split zones to choose an axis, with left/right as the center fallback.
 - **Other panes stay in place**, including panes you have resized. Each accepted drop creates a new tab and focuses it.
 - A translucent preview marks the new pane before you release the link.
+- With Zen's `zen.tabs.close-on-back-with-no-history` preference enabled, Back (including the browser Back gesture) closes a new unpinned split pane when it has no previous page. If the pane has history, Back navigates normally.
 - The mod respects Zen's pane limit (currently four). A full split displays “Split view is full” and refuses the drop without replacing a page.
 - Hold **Alt** while dropping to use ordinary browser/page drop behavior. **Escape** cancels the drag.
 
@@ -39,7 +40,7 @@ npm run test:native
 
 `npm test` exercises drop-zone selection, pane targeting, transfer filtering, source-window checks, URL validation, container and pinned state, limits, preview preferences, failure cleanup, and startup/unload behavior using browser-service mocks.
 
-`npm run test:native` downloads [Zen's splitter implementation at a pinned commit](https://github.com/zen-browser/desktop/blob/bce6a23ea7082967bc27a92ae8613a4b04f3dae3/src/zen/split-view/ZenViewSplitter.mjs) to a temporary directory and executes its real layout and tab-admission methods. Only browser UI/services are stubbed. The checks cover all four first-split directions, three/four-pane nested layouts, preservation of resized siblings, pinned tabs, and rollback after an insertion failure. An internet connection is required. To check a different Zen revision:
+`npm run test:native` downloads [Zen's splitter implementation at a pinned commit](https://github.com/zen-browser/desktop/blob/bce6a23ea7082967bc27a92ae8613a4b04f3dae3/src/zen/split-view/ZenViewSplitter.mjs), its common actions, and its Back/gesture patches to a temporary directory. It executes the real layout and tab-admission methods, the Back-to-close eligibility predicate, the patched current-tab Back branch, and the patched swipe eligibility expression. Browser UI/services are stubbed. The checks cover all four first-split directions, three/four-pane nested layouts, preservation of resized siblings, pinned tabs, rollback after an insertion failure, and Back-to-close ownership, history, and preference behavior. An internet connection is required. To check a different Zen revision:
 
 ```sh
 ZEN_SPLITTER_REF=dev npm run test:native
@@ -59,6 +60,7 @@ Open [tests/drag-links.html](tests/drag-links.html) in the Zen window where you 
 8. Try an iframe link, a pinned page, a container tab, and a private window. Confirm the destination stays in the same window and retains the target container/pinned state.
 9. Try a tab drag, text selection, file/image drag, cross-window link, and Alt-drop. Verify ordinary behavior remains available.
 10. Cancel a drag or leave the content area. Verify the preview disappears. Disable the mod through Sine and verify link splitting stops.
+11. Create a new unpinned split pane, then use the Back gesture before navigating elsewhere. Verify the new pane closes. Repeat after navigating to another page in that pane: Back should return to the previous page first. Also check a drop into an unfocused pane, and that disabling `zen.tabs.close-on-back-with-no-history` prevents Back from closing it.
 
 These manual checks have not been run in a live Zen instance in this workspace. Firefox/Zen chrome drag-event delivery across remote content processes still needs live verification; the automated checks cover the handler and layout logic.
 

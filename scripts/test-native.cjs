@@ -6,16 +6,25 @@ const { spawnSync } = require("node:child_process");
 
 (async () => {
   const ref = process.env.ZEN_SPLITTER_REF || "bce6a23ea7082967bc27a92ae8613a4b04f3dae3";
-  const url = `https://raw.githubusercontent.com/zen-browser/desktop/${ref}/src/zen/split-view/ZenViewSplitter.mjs`;
-  const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
-  if (!response.ok) throw new Error(`Could not fetch Zen source: HTTP ${response.status}`);
+  const sources = {
+    ZEN_SPLITTER_SOURCE: "src/zen/split-view/ZenViewSplitter.mjs",
+    ZEN_COMMON_ACTIONS_SOURCE: "src/zen/common/modules/ZenCommonUtils.mjs",
+    ZEN_BACK_COMMANDS_PATCH: "src/browser/base/content/browser-commands-js.patch",
+    ZEN_GESTURE_PATCH: "src/browser/base/content/browser-gestureSupport-js.patch",
+  };
   const directory = await mkdtemp(join(tmpdir(), "zen-link-drop-native-"));
   try {
-    const file = join(directory, "ZenViewSplitter.mjs");
-    await writeFile(file, await response.text());
-    console.log(`Testing native Zen layout APIs from ${ref}`);
+    const files = Object.fromEntries(await Promise.all(Object.entries(sources).map(async ([key, path]) => {
+      const url = `https://raw.githubusercontent.com/zen-browser/desktop/${ref}/${path}`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
+      if (!response.ok) throw new Error(`Could not fetch ${path}: HTTP ${response.status}`);
+      const file = join(directory, path.split("/").at(-1));
+      await writeFile(file, await response.text());
+      return [key, file];
+    })));
+    console.log(`Testing native Zen layout and Back APIs from ${ref}`);
     const result = spawnSync(process.execPath, ["--test", "tests/zen-native.test.cjs"], {
-      stdio: "inherit", env: { ...process.env, ZEN_SPLITTER_SOURCE: file },
+      stdio: "inherit", env: { ...process.env, ...files },
     });
     if (result.error) throw result.error;
     process.exitCode = result.status ?? 1;

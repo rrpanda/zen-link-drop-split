@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           Link Drop Split
 // @description    Open same-window dragged links in pane-aware Zen split tabs.
-// @version        0.1.0
+// @version        0.1.1
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
 
@@ -336,6 +336,8 @@
           allowInheritPrincipal: false,
           userContextId: Number(plan.tab.getAttribute("usercontextid")) || 0,
           pinned: Boolean(plan.tab.pinned),
+          // Background tabs need an explicit owner for Zen's native Back-to-close.
+          ownerTab: plan.tab,
           inBackground: true,
           skipAnimation: true,
           skipRoute: true,

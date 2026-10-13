@@ -2,7 +2,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { readFileSync } = require("node:fs");
 const vm = require("node:vm");
-const { splitTab, findLeaf } = require("../link-drop-split.uc.js");
+const { splitTab, findLeaf, LinkDropController } = require("../link-drop-split.uc.js");
 
 const nativeTest = (name, fn) => test(name, { skip: !process.env.ZEN_SPLITTER_SOURCE }, fn);
 
@@ -40,7 +40,7 @@ function nativeHarness() {
   };
   function tab(id, pinned = false) {
     const container = { style: {} };
-    return { id, hidden: false, pinned, hasAttribute: () => false,
+    return { id, hidden: false, pinned, hasAttribute: () => false, getAttribute: () => "",
       linkedBrowser: { closest: () => container }, container };
   }
   return { splitter, tab, gBrowser };
@@ -128,4 +128,97 @@ nativeTest("native Zen relocation failure restores a layout that can safely clos
   splitter.applyGridLayout(group.layoutTree);
   close(bounds(splitter, a), { left: 0, top: 0, width: 50, height: 100 });
   close(bounds(splitter, b), { left: 50, top: 0, width: 50, height: 100 });
+});
+
+function nativeBackHarness(gBrowser) {
+  const prefs = new Map();
+  const context = {
+    window: {}, gBrowser,
+    Services: { prefs: { getBoolPref: (name, fallback) => prefs.get(name) ?? fallback } },
+    BrowserUtils: { whereToOpenLink: () => "current" },
+  };
+  const common = readFileSync(process.env.ZEN_COMMON_ACTIONS_SOURCE, "utf8")
+    .replace(/^export /gm, "");
+  vm.runInNewContext(common, context, { filename: "upstream/ZenCommonUtils.mjs" });
+  context.gZenCommonActions = context.window.gZenCommonActions;
+
+  // Execute the actual current-tab branch from Zen's patched Back command.
+  // The diff context ends before the closing braces for the if and the method.
+  const commandPatch = readFileSync(process.env.ZEN_BACK_COMMANDS_PATCH, "utf8");
+  const hunk = commandPatch.split(/^@@.*\n/m).find(part => part.includes("gBrowser.removeTab(gBrowser.selectedTab"));
+  assert.ok(hunk, "Zen's native Back command hunk must exist");
+  const body = hunk.split("\n")
+    .filter(line => line.startsWith(" ") || line.startsWith("+"))
+    .map(line => line.slice(1)).join("\n");
+  const back = vm.runInNewContext(`(function(aEvent) { ${body}\n} })`, context);
+
+  const gesturePatch = readFileSync(process.env.ZEN_GESTURE_PATCH, "utf8");
+  const returnLine = gesturePatch.match(/^\+\s*(return gBrowser.webNavigation.canGoBack.*);$/m)?.[1];
+  assert.ok(returnLine, "Zen's native swipe eligibility expression must exist");
+  const canSwipeBack = vm.runInNewContext(`(function() { ${returnLine}; })`, context);
+  return { prefs, back, canSwipeBack, actions: context.gZenCommonActions };
+}
+
+nativeTest("dropped split tabs support native Back-to-close while preserving history and preferences", () => {
+  const { splitter, tab, gBrowser } = nativeHarness();
+  const a = tab("a"), b = tab("b"); gBrowser.selectedTab = a;
+  splitTab(splitter, a, b, "right");
+  // Drop into an unfocused pane; the owner must be that pane, not the focused one.
+  gBrowser.selectedTab = b;
+  const sourceContext = {}; sourceContext.top = sourceContext;
+  a.linkedBrowser.browsingContext = sourceContext;
+  a.linkedBrowser.getBoundingClientRect = () => ({ left: 0, top: 0, width: 600, height: 800 });
+  b.linkedBrowser.getBoundingClientRect = () => ({ left: 600, top: 0, width: 600, height: 800 });
+  gBrowser.browsers = [a.linkedBrowser, b.linkedBrowser];
+  gBrowser.webNavigation = { canGoBack: false };
+  let newTab, removed = [], navigated = 0;
+  gBrowser.addTab = (url, options) => {
+    newTab = tab("new", options.pinned);
+    newTab.owner = options.ownerTab ?? null;
+    return newTab;
+  };
+  gBrowser.removeTab = value => { removed.push(value); };
+  gBrowser.goBack = () => { navigated++; };
+  const native = nativeBackHarness(gBrowser);
+  const services = {
+    prefs: { getBoolPref: (name, fallback) => fallback },
+    droppedLinkHandler: {
+      queryLinks: () => [{ url: "https://example.com" }],
+      dropLinks: () => [{ url: "https://example.com" }],
+      getTriggeringPrincipal: () => ({}),
+    },
+  };
+  const controller = new LinkDropController({ gBrowser, gZenViewSplitter: splitter, console }, services);
+  controller.onDrop({
+    isTrusted: true, clientX: 300, clientY: 600,
+    dataTransfer: { types: ["text/x-moz-url"], mozItemCount: 1,
+      effectAllowed: "copy", sourceTopWindowContext: { browsingContext: sourceContext } },
+    preventDefault() {}, stopImmediatePropagation() {},
+  });
+  assert.equal(gBrowser.selectedTab, newTab);
+  assert.equal(newTab.owner, a, "owner persists through native split admission and relocation");
+  assert.equal(native.actions.shouldCloseTabOnBack(), true);
+  assert.equal(native.canSwipeBack(), true);
+  native.back({});
+  assert.deepEqual(removed, [newTab]);
+
+  removed = []; gBrowser.webNavigation.canGoBack = true;
+  native.back({});
+  assert.deepEqual(removed, []);
+  assert.equal(navigated, 1, "existing history is navigated instead of closing the split tab");
+
+  gBrowser.webNavigation.canGoBack = false;
+  native.prefs.set("zen.tabs.close-on-back-with-no-history", false);
+  assert.equal(native.actions.shouldCloseTabOnBack(), false);
+  assert.equal(native.canSwipeBack(), false);
+  native.back({}); assert.deepEqual(removed, []);
+  gBrowser.webNavigation.canGoBack = true;
+  assert.equal(native.canSwipeBack(), true, "disabling close-on-back does not disable history swipes");
+  gBrowser.webNavigation.canGoBack = false;
+
+  native.prefs.set("zen.tabs.close-on-back-with-no-history", true);
+  newTab.pinned = true;
+  assert.equal(native.actions.shouldCloseTabOnBack(), false);
+  assert.equal(native.canSwipeBack(), false);
+  native.back({}); assert.deepEqual(removed, []);
 });
