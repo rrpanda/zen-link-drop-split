@@ -193,13 +193,21 @@ test("dropping into another pane targets that pane rather than the selected tab"
 
 test("full split group blocks the drop without opening or replacing a tab", () => {
   const h = harness();
-  h.win.gZenViewSplitter._data.push({ tabs: [h.targetTab, {}, {}, {}] });
+  const tabs = [h.targetTab, ...Array.from({ length: 3 }, () => ({
+    ...h.targetTab, linkedBrowser: { ...h.targetTab.linkedBrowser },
+    owner: h.targetTab,
+  }))];
+  const owners = tabs.map(tab => tab.owner);
+  h.win.gZenViewSplitter._data.push({ tabs });
   h.controller.onDragOver(h.event);
   assert.equal(h.event.dataTransfer.dropEffect, "none");
   assert.equal(h.controller.preview.firstChild.textContent, "Split view is full");
   h.controller.onDrop(h.event);
   assert.equal(h.event.prevented, true);
   assert.equal(h.calls.added.length, 0);
+  assert.equal(h.event.stopped, true);
+  assert.equal(h.win.gBrowser.selectedTab, h.targetTab);
+  assert.deepEqual(tabs.map(tab => tab.owner), owners);
 });
 
 test("unrelated drags and bypass gestures leave the native handlers available", () => {
@@ -427,11 +435,28 @@ test("rollback does not revive a closing or detached pane or owner", () => {
   }
 });
 
-test("successful drops retain native clearing of the previous pane's owner", () => {
+test("successful drops preserve the previous pane's Back-to-close owner", () => {
   const h = harness();
-  h.targetTab.owner = { isConnected: true };
+  const owner = { isConnected: true };
+  h.targetTab.owner = owner;
   h.controller.onDrop(h.event);
-  assert.equal(h.targetTab.owner, null);
+  assert.equal(h.targetTab.owner, owner);
   assert.equal(h.win.gBrowser.selectedTab.owner, h.targetTab);
+  assert.equal(h.calls.errors.length, 0);
+});
+
+test("successful drops into an unfocused pane preserve both existing owners", () => {
+  const h = harness();
+  const owner = { isConnected: true };
+  h.targetTab.owner = owner;
+  const other = { ...h.targetTab, owner: h.targetTab, linkedBrowser: {
+    getBoundingClientRect: () => ({ left: 700, top: 80, width: 600, height: 800 }),
+  } };
+  h.win.gZenViewSplitter._data.push({ tabs: [h.targetTab, other] });
+  h.event.target = h.event.originalTarget = other.linkedBrowser;
+  h.controller.onDrop(h.event);
+  assert.equal(h.targetTab.owner, owner);
+  assert.equal(other.owner, h.targetTab);
+  assert.equal(h.win.gBrowser.selectedTab.owner, other);
   assert.equal(h.calls.errors.length, 0);
 });

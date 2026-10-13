@@ -8,7 +8,7 @@ A [Sine](https://github.com/CosmoCreeper/Sine) JavaScript mod for Zen Browser. D
 - **Later splits:** drop anywhere inside the pane you want to divide. A wide pane divides into left/right halves; a tall pane divides into top/bottom halves. The pointer chooses which half receives the new link. A square pane uses the first-split zones to choose an axis, with left/right as the center fallback.
 - **Other panes stay in place**, including panes you have resized. Each accepted drop creates a new tab and focuses it.
 - A translucent preview marks the new pane before you release the link.
-- With Zen's `zen.tabs.close-on-back-with-no-history` preference enabled, Back (including the browser Back gesture) closes a new unpinned split pane when it has no previous page. If the pane has history, Back navigates normally.
+- With Zen's `zen.tabs.close-on-back-with-no-history` preference enabled, Back (including the browser Back gesture) closes a new unpinned split pane when it has no previous page. Earlier panes retain this behavior when more panes are added or a drop is refused at the pane limit. If the pane has history, Back navigates normally.
 - The mod respects Zen's pane limit (currently four). A full split displays “Split view is full” and refuses the drop without replacing a page.
 - Hold **Alt** while dropping to use ordinary browser/page drop behavior. **Escape** cancels the drag.
 
@@ -58,7 +58,7 @@ Open [tests/drag-links.html](tests/drag-links.html) in the Zen window where you 
 4. Start with a stacked split. Drop another link on a wide pane near its right edge: only that pane divides into side-by-side halves.
 5. Resize a sibling pane, then split the other pane. Verify the sibling retains its size and position.
 6. Drop in an unfocused pane. Verify that pane is the one divided and the new tab is focused.
-7. Reach the pane limit and try another link. Verify no tab opens and no existing page navigates.
+7. Reach the pane limit and try another link. Verify no tab opens and no existing page navigates. Focus each earlier unpinned pane created by the mod and use Back with no history: it should still close that pane. Repeat with a drop into an unfocused pane.
 8. Try an iframe link, a pinned page, a container tab, and a private window. Confirm the destination stays in the same window and retains the target container/workspace/pinned state. With container workspace forcing enabled, manually move a container tab from its assigned workspace B to workspace A, then drop a link into it: the new pane should stay in A without switching to B.
 9. Try a tab drag, text selection, file/image drag, cross-window link, and Alt-drop. Verify ordinary behavior remains available.
 10. Drag the fixture’s explicit URI-list sources: trailing CRLF/comments/blank lines should open one split; two URLs and non-web URLs should retain ordinary behavior.

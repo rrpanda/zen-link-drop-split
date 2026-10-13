@@ -402,13 +402,16 @@
         if (attemptedAdd && selectedBefore && !selectedBefore.closing &&
             selectedBefore.isConnected !== false) {
           this.win.gBrowser.selectedTab = selectedBefore;
-          // Native addTab clears the selected pane's Back-to-close owner.
-          // Roll back that side effect even if addTab throws or returns null.
-          if (ownerBefore && !ownerBefore.closing && ownerBefore.isConnected !== false) {
-            selectedBefore.owner = ownerBefore;
-          }
         }
         this.win.console.error("[Link Drop Split] Could not split the dropped link:", error);
+      } finally {
+        // Native addTab clears the selected pane's Back-to-close owner. Adding
+        // a sibling must preserve it on success as well as after a failed drop.
+        if (attemptedAdd && selectedBefore && !selectedBefore.closing &&
+            selectedBefore.isConnected !== false && ownerBefore &&
+            !ownerBefore.closing && ownerBefore.isConnected !== false) {
+          selectedBefore.owner = ownerBefore;
+        }
       }
     }
 

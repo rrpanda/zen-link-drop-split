@@ -313,7 +313,7 @@ nativeTest("moved container drops keep the target workspace through native works
   }
 });
 
-nativeTest("rollback preserves native Back eligibility after addTab clears ownership", () => {
+nativeTest("drops preserve native Back eligibility after addTab clears ownership", () => {
   const { clearOwner } = patchedTabCreationParts();
   const clear = vm.runInNewContext(`(function() { ${clearOwner} })`);
   for (const failure of ["split", "throw", "null", "success"]) {
@@ -335,7 +335,7 @@ nativeTest("rollback preserves native Back eligibility after addTab clears owner
     if (failure === "split") h.splitter.splitTabs = () => undefined;
     h.controller.onDrop(h.event);
     if (failure === "success") {
-      assert.equal(h.target.owner, null, "successful additions preserve native clearing");
+      assert.equal(h.target.owner, previousOwner, "successful additions preserve existing ownership");
       assert.equal(h.gBrowser.selectedTab, newTab);
     } else {
       assert.equal(h.target.owner, previousOwner);
@@ -345,5 +345,54 @@ nativeTest("rollback preserves native Back eligibility after addTab clears owner
     }
     assert.equal(native.actions.shouldCloseTabOnBack(), true);
     assert.equal(native.canSwipeBack(), true);
+  }
+});
+
+nativeTest("earlier panes keep native Back gestures after reaching the limit and rejecting another drop", () => {
+  const { clearOwner } = patchedTabCreationParts();
+  const clear = vm.runInNewContext(`(function() { ${clearOwner} })`);
+  for (const originalOwned of [false, true]) {
+    const h = nativeDropHarness();
+    if (originalOwned) h.target.owner = h.tab("original-owner");
+    h.gBrowser.webNavigation = { canGoBack: false };
+    const native = nativeBackHarness(h.gBrowser);
+    const tabs = [h.target], removed = [];
+    h.gBrowser.addTab = function(url, options) {
+      clear.call(this);
+      const tab = h.tab(`pane-${tabs.length}`);
+      tab.owner = options.ownerTab;
+      tabs.push(tab);
+      h.gBrowser.browsers.push(tab.linkedBrowser);
+      return tab;
+    };
+    h.gBrowser.removeTab = tab => removed.push(tab);
+    const targetPane = tab => {
+      const rect = bounds(h.splitter, tab);
+      tab.linkedBrowser.getBoundingClientRect = () => rect;
+      h.event.target = h.event.originalTarget = tab.linkedBrowser;
+      h.event.clientX = rect.left + rect.width * 0.9;
+      h.event.clientY = rect.top + rect.height * 0.5;
+    };
+    h.controller.onDrop(h.event);
+    targetPane(tabs[1]); h.controller.onDrop(h.event);
+    // Split an unfocused pane while preserving the focused pane's owner.
+    targetPane(tabs[1]); h.controller.onDrop(h.event);
+    assert.equal(tabs.length, 4);
+    const owners = tabs.map(tab => tab.owner);
+    for (let index = 0; index < tabs.length; index++) {
+      h.gBrowser.selectedTab = tabs[index];
+      targetPane(tabs[(index + 1) % tabs.length]);
+      assert.equal(h.controller.getDropPlan(h.event).blocked, true);
+      h.controller.onDrop(h.event);
+      assert.equal(h.gBrowser.selectedTab, tabs[index]);
+      assert.deepEqual(tabs.map(tab => tab.owner), owners);
+      const eligible = index > 0 || originalOwned;
+      assert.equal(native.actions.shouldCloseTabOnBack(), eligible, tabs[index].id);
+      assert.equal(native.canSwipeBack(), eligible, tabs[index].id);
+      native.back({});
+      assert.equal(removed.at(-1), eligible ? tabs[index] : undefined);
+    }
+    assert.equal(tabs.length, 4, "blocked drops create no extra tab");
+    assert.equal(h.errors.length, 0);
   }
 });
