@@ -21,4 +21,29 @@
 <h2>Ordinary behavior checks</h2>
 <p>Select and drag this text. It should retain ordinary drop behavior. Hold Alt while dropping a web link to bypass the mod.</p>
 <p><a href="mailto:test@example.com">A mail link uses ordinary browser behavior</a></p>
+<h2>URI-list payloads</h2>
+<p>Drag these test sources to an edge. The first two should split once; the last two should keep ordinary behavior. They set URI-list payloads explicitly, including trailing CRLF and comments.</p>
+<ul id="payloads">
+  <li draggable="true" data-payload="single">Single URL with trailing CRLF</li>
+  <li draggable="true" data-payload="comments">Single URL with comments and blank lines</li>
+  <li draggable="true" data-payload="multiple">Two URLs with trailing CRLF</li>
+  <li draggable="true" data-payload="invalid">Non-web URL</li>
+</ul>
+<h2>Page input target</h2>
+<p><input aria-label="Page drop target" placeholder="Page input: Alt-drop keeps normal behavior"></p>
+<p>Page controls belong to content. Browser chrome inputs and overlays should never show a split preview or create a split, even when drawn over a pane. Check the address bar and find bar in Zen, plus any available popup or overlay over content.</p>
+<script>
+  const payloads = {
+    single: "https://example.com/?split-test=crlf\r\n",
+    comments: "# comment\r\n\r\nhttps://example.com/?split-test=comments\r\n \t\r\n",
+    multiple: "https://example.com/one\r\nhttps://example.org/two\r\n",
+    invalid: "javascript:void(0)\r\n",
+  };
+  document.querySelectorAll("[data-payload]").forEach(source => {
+    source.addEventListener("dragstart", event => {
+      event.dataTransfer.setData("text/uri-list", payloads[source.dataset.payload]);
+      event.dataTransfer.effectAllowed = "copy";
+    });
+  });
+</script>
 </html>
