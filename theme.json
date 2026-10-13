@@ -2,7 +2,7 @@
   "id": "zen-link-drop-split",
   "name": "Link Drop Split",
   "description": "Drag links into split tabs, with subsequent drops dividing only the target pane along its longer dimension.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Zen Link Drop Split contributors",
   "homepage": "https://github.com/rrpanda/zen-link-drop-split",
   "readme": "https://raw.githubusercontent.com/rrpanda/zen-link-drop-split/main/README.md",

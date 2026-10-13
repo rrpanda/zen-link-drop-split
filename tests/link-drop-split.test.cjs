@@ -99,7 +99,8 @@ function harness() {
     _data: [], MAX_TABS: 4,
     splitTabs(tabs, gridType, index) {
       calls.splits.push({ tabs, gridType, index });
-      const group = { tabs, layoutTree: {} }; this._data.push(group); return group;
+      const group = { tabs, layoutTree: { children: tabs.map(tab => ({ tab })) } };
+      this._data.push(group); return group;
     },
     removeNode() {}, splitIntoNode() {}, activateSplitView() {},
   };
@@ -108,7 +109,8 @@ function harness() {
     gBrowser: { selectedTab: targetTab, browsers: [browser],
       addTab(url, options) {
         calls.added.push({ url, options });
-        return { closing: false, hasAttribute: () => false };
+        return { closing: false, owner: options.ownerTab ?? null,
+          pinned: options.pinned, hasAttribute: () => false };
       },
       removeTab: tab => calls.removed.push(tab),
     },
@@ -149,6 +151,7 @@ test("same-window drops use the source principal and target container, then focu
   assert.equal(h.calls.added[0].options.policyContainer, h.policy);
   assert.equal(h.calls.added[0].options.userContextId, 3);
   assert.equal(h.calls.added[0].options.skipRoute, true);
+  assert.equal(h.win.gBrowser.selectedTab.owner, h.targetTab);
   assert.equal(h.calls.splits[0].gridType, "vsep");
   assert.equal(h.calls.splits[0].tabs[0], h.targetTab);
   assert.equal(h.win.gBrowser.selectedTab, h.calls.splits[0].tabs[1]);
@@ -181,6 +184,10 @@ test("dropping into another pane targets that pane rather than the selected tab"
   const plan = h.controller.getDropPlan(h.event);
   assert.equal(plan.tab, other);
   assert.equal(plan.side, "bottom");
+  h.controller.onDrop(h.event);
+  assert.equal(h.calls.errors.length, 0);
+  assert.equal(h.calls.added[0].options.ownerTab, other);
+  assert.equal(h.win.gBrowser.selectedTab.owner, other);
 });
 
 test("full split group blocks the drop without opening or replacing a tab", () => {
