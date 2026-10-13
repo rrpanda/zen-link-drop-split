@@ -173,6 +173,7 @@ nativeTest("dropped split tabs support native Back-to-close while preserving his
   gBrowser.webNavigation = { canGoBack: false };
   let newTab, removed = [], navigated = 0;
   gBrowser.addTab = (url, options) => {
+    gBrowser.selectedTab.owner = null;
     newTab = tab("new", options.pinned);
     newTab.owner = options.ownerTab ?? null;
     return newTab;
@@ -223,4 +224,126 @@ nativeTest("dropped split tabs support native Back-to-close while preserving his
   assert.equal(native.actions.shouldCloseTabOnBack(), false);
   assert.equal(native.canSwipeBack(), false);
   native.back({}); assert.deepEqual(removed, []);
+});
+
+function nativeDropHarness() {
+  const h = nativeHarness();
+  const target = h.tab("target");
+  const attrs = new Map([["usercontextid", "3"], ["zen-workspace-id", "a"]]);
+  target.getAttribute = name => attrs.get(name) ?? "";
+  target.hasAttribute = name => attrs.has(name);
+  const sourceContext = {}; sourceContext.top = sourceContext;
+  target.linkedBrowser.browsingContext = sourceContext;
+  target.linkedBrowser.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 });
+  h.gBrowser.selectedTab = target;
+  h.gBrowser.browsers = [target.linkedBrowser];
+  const errors = [];
+  const controller = new LinkDropController({ gBrowser: h.gBrowser,
+    gZenViewSplitter: h.splitter, console: { error: (...args) => errors.push(args) } }, {
+    prefs: { getBoolPref: (name, fallback) => fallback },
+    droppedLinkHandler: {
+      queryLinks: () => [{ url: "https://example.com" }],
+      dropLinks: () => [{ url: "https://example.com" }],
+      getTriggeringPrincipal: () => ({}),
+    },
+  });
+  const event = {
+    target: target.linkedBrowser, originalTarget: target.linkedBrowser,
+    composedPath() { return [this.target]; }, isTrusted: true, clientX: 790, clientY: 300,
+    dataTransfer: { types: ["text/x-moz-url"], mozItemCount: 1,
+      effectAllowed: "copy", sourceTopWindowContext: { browsingContext: sourceContext } },
+    preventDefault() {}, stopImmediatePropagation() {},
+  };
+  return { ...h, target, attrs, controller, event, errors };
+}
+
+function patchedTabCreationParts() {
+  const patch = readFileSync(process.env.ZEN_TABBROWSER_PATCH, "utf8");
+  const lines = patch.split("\n").filter(line => line.startsWith(" ") ||
+    (line.startsWith("+") && !line.startsWith("+++"))).map(line => line.slice(1)).join("\n");
+  const clearOwner = lines.match(/    if \(this.selectedTab.owner\) \{\n      this.selectedTab.owner = null;\n    \}/)?.[0];
+  const workspace = lines.match(/      if \(zenWorkspaceId\) \{[\s\S]*?\n      \} else if \(zenForcedWorkspaceId !== undefined\) \{[\s\S]*?\n      \}/)?.[0];
+  assert.ok(clearOwner, "native addTab ownership clearing must exist");
+  assert.ok(workspace, "native addTab explicit/forced workspace assignment must exist");
+  return { clearOwner, workspace };
+}
+
+nativeTest("moved container drops keep the target workspace through native workspace forcing", async () => {
+  const source = readFileSync(process.env.ZEN_WORKSPACES_SOURCE, "utf8");
+  const contextMethod = source.slice(source.indexOf("  getContextIdIfNeeded("), source.indexOf("\n  getTabsToExclude("));
+  const insertedMethod = source.slice(source.indexOf("  async onTabBrowserInserted("), source.indexOf("\n  #changeToEmptyTab("));
+  assert.ok(contextMethod && insertedMethod, "native workspace methods must exist");
+  const { workspace } = patchedTabCreationParts();
+  for (const enabled of [true, false]) {
+    const h = nativeDropHarness();
+    const scheduled = [], changes = [];
+    const workspaces = vm.runInNewContext(`({ ${contextMethod}, ${insertedMethod} })`, {
+      gZenGlanceManager: { getTabOrGlanceParent: tab => tab },
+      setTimeout: callback => scheduled.push(callback),
+    });
+    Object.assign(workspaces, {
+      workspaceEnabled: enabled, shouldForceContainerTabsToWorkspace: true,
+      _workspaceCache: [{ uuid: "a", containerTabId: 0 }, { uuid: "b", containerTabId: 3 }],
+      getActiveWorkspaceFromCache() { return this._workspaceCache[0]; },
+      lastSelectedWorkspaceTabs: {}, moveTabToWorkspace: () => true,
+      getWorkspaceFromId(id) { return this._workspaceCache.find(value => value.uuid === id); },
+      changeWorkspace(value) { changes.push(value.uuid); },
+    });
+    const assignWorkspace = vm.runInNewContext(`(function(t, zenWorkspaceId, zenForcedWorkspaceId) { ${workspace} })`);
+    let newTab;
+    h.gBrowser.addTab = (url, options) => {
+      const [container, , forced] = workspaces.getContextIdIfNeeded(options.userContextId, undefined, options.triggeringPrincipal);
+      assert.equal(container, 3);
+      assert.equal(forced, enabled ? "b" : undefined, "container forcing still runs despite skipRoute");
+      newTab = h.tab("new"); newTab.owner = options.ownerTab;
+      const attributes = new Map();
+      newTab.setAttribute = (name, value) => attributes.set(name, value);
+      newTab.getAttribute = name => attributes.get(name) ?? "";
+      newTab.hasAttribute = name => attributes.has(name);
+      newTab.removeAttribute = name => attributes.delete(name);
+      assignWorkspace(newTab, options.zenWorkspaceId, forced);
+      return newTab;
+    };
+    h.controller.onDrop(h.event);
+    assert.equal(h.errors.length, 0);
+    assert.equal(newTab.getAttribute("zen-workspace-id"), "a");
+    await workspaces.onTabBrowserInserted({ originalTarget: newTab });
+    scheduled.forEach(callback => callback());
+    assert.deepEqual(changes, enabled ? ["a"] : [], "no switch to the container's assigned workspace b");
+  }
+});
+
+nativeTest("rollback preserves native Back eligibility after addTab clears ownership", () => {
+  const { clearOwner } = patchedTabCreationParts();
+  const clear = vm.runInNewContext(`(function() { ${clearOwner} })`);
+  for (const failure of ["split", "throw", "null", "success"]) {
+    const h = nativeDropHarness();
+    const previousOwner = h.tab("previous-owner"); h.target.owner = previousOwner;
+    h.gBrowser.webNavigation = { canGoBack: false };
+    const native = nativeBackHarness(h.gBrowser);
+    assert.equal(native.actions.shouldCloseTabOnBack(), true);
+    let newTab;
+    h.gBrowser.addTab = function(url, options) {
+      clear.call(this);
+      assert.equal(native.actions.shouldCloseTabOnBack(), false, "native addTab removes Back eligibility");
+      if (failure === "throw") throw new Error("native addTab failure");
+      if (failure === "null") return null;
+      newTab = h.tab("new"); newTab.owner = options.ownerTab;
+      return newTab;
+    };
+    h.gBrowser.removeTab = tab => { tab.closing = true; };
+    if (failure === "split") h.splitter.splitTabs = () => undefined;
+    h.controller.onDrop(h.event);
+    if (failure === "success") {
+      assert.equal(h.target.owner, null, "successful additions preserve native clearing");
+      assert.equal(h.gBrowser.selectedTab, newTab);
+    } else {
+      assert.equal(h.target.owner, previousOwner);
+      assert.equal(h.gBrowser.selectedTab, h.target);
+      assert.equal(h.errors.length, 1);
+      if (newTab) assert.equal(newTab.closing, true);
+    }
+    assert.equal(native.actions.shouldCloseTabOnBack(), true);
+    assert.equal(native.canSwipeBack(), true);
+  }
 });

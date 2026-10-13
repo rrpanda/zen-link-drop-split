@@ -343,6 +343,8 @@
     onDrop(event) {
       this.hidePreview();
       let newTab;
+      let ownerBefore;
+      let attemptedAdd = false;
       const selectedBefore = this.win.gBrowser.selectedTab;
       try {
         const plan = this.getDropPlan(event);
@@ -370,12 +372,19 @@
           skipAnimation: true,
           skipRoute: true,
         };
+        // Container assignment can force a different workspace even with skipRoute.
+        const workspaceId = plan.tab.getAttribute("zen-workspace-id");
+        if (workspaceId) {
+          options.zenWorkspaceId = workspaceId;
+        }
         // Support both current Firefox and older Zen bases.
         if (typeof handler.getPolicyContainer === "function") {
           options.policyContainer = handler.getPolicyContainer(event);
         } else if (typeof handler.getCSP === "function") {
           options.csp = handler.getCSP(event);
         }
+        ownerBefore = selectedBefore?.owner;
+        attemptedAdd = true;
         newTab = this.win.gBrowser.addTab(link.url, options);
         if (!newTab) {
           throw new Error("Zen did not create the link tab.");
@@ -389,8 +398,14 @@
           } catch (cleanupError) {
             this.win.console.error("[Link Drop Split] Could not close the failed link tab:", cleanupError);
           }
-          if (selectedBefore && !selectedBefore.closing) {
-            this.win.gBrowser.selectedTab = selectedBefore;
+        }
+        if (attemptedAdd && selectedBefore && !selectedBefore.closing &&
+            selectedBefore.isConnected !== false) {
+          this.win.gBrowser.selectedTab = selectedBefore;
+          // Native addTab clears the selected pane's Back-to-close owner.
+          // Roll back that side effect even if addTab throws or returns null.
+          if (ownerBefore && !ownerBefore.closing && ownerBefore.isConnected !== false) {
+            selectedBefore.owner = ownerBefore;
           }
         }
         this.win.console.error("[Link Drop Split] Could not split the dropped link:", error);

@@ -109,6 +109,7 @@ function harness() {
     gBrowser: { selectedTab: targetTab, browsers: [browser],
       addTab(url, options) {
         calls.added.push({ url, options });
+        this.selectedTab.owner = null;
         return { closing: false, owner: options.ownerTab ?? null,
           pinned: options.pinned, hasAttribute: () => false };
       },
@@ -377,4 +378,60 @@ test("chrome inputs, overlays, retargeted chrome descendants and absent targets 
     assert.equal(h.calls.added.length, 0, kind);
     assert.equal(h.controller.preview, null, kind);
   }
+});
+
+
+test("workspace option is supplied only when the target has an explicit workspace", () => {
+  for (const workspace of [undefined, "", "workspace-a"]) {
+    const h = harness();
+    if (workspace !== undefined) h.attrs.set("zen-workspace-id", workspace);
+    h.controller.onDrop(h.event);
+    const options = h.calls.added[0].options;
+    assert.equal(Object.hasOwn(options, "zenWorkspaceId"), Boolean(workspace));
+    if (workspace) assert.equal(options.zenWorkspaceId, workspace);
+  }
+});
+
+test("failed tab creation and splitting restore the selected pane's owner", () => {
+  for (const failure of ["split", "throw", "null"]) {
+    const h = harness();
+    const owner = { isConnected: true };
+    h.targetTab.owner = owner;
+    if (failure === "split") h.win.gZenViewSplitter.splitTabs = () => undefined;
+    else h.win.gBrowser.addTab = function() {
+      this.selectedTab.owner = null;
+      if (failure === "throw") throw new Error("creation failed after owner clearing");
+      return null;
+    };
+    h.controller.onDrop(h.event);
+    assert.equal(h.targetTab.owner, owner, failure);
+    assert.equal(h.win.gBrowser.selectedTab, h.targetTab, failure);
+    assert.equal(h.calls.removed.length, failure === "split" ? 1 : 0);
+  }
+});
+
+test("rollback does not revive a closing or detached pane or owner", () => {
+  for (const subject of ["pane", "owner"]) {
+    for (const state of [{ closing: true }, { isConnected: false }]) {
+      const h = harness();
+      const owner = { isConnected: true };
+      h.targetTab.owner = owner;
+      h.win.gBrowser.addTab = function() {
+        this.selectedTab.owner = null;
+        Object.assign(subject === "pane" ? h.targetTab : owner, state);
+        return null;
+      };
+      h.controller.onDrop(h.event);
+      assert.equal(h.targetTab.owner, null);
+    }
+  }
+});
+
+test("successful drops retain native clearing of the previous pane's owner", () => {
+  const h = harness();
+  h.targetTab.owner = { isConnected: true };
+  h.controller.onDrop(h.event);
+  assert.equal(h.targetTab.owner, null);
+  assert.equal(h.win.gBrowser.selectedTab.owner, h.targetTab);
+  assert.equal(h.calls.errors.length, 0);
 });
