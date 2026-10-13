@@ -255,6 +255,28 @@
       return owner === this.win || owner?.top === this.win;
     }
 
+    isContentTarget(event, browser) {
+      // Remote page events arrive retargeted to the exact <browser>. For local
+      // content (including frames), match its top browsing context instead.
+      // Never infer a page target from a browser ancestor: chrome overlays and
+      // controls can share its bounds or appear in the same event path.
+      const accepts = target => {
+        if (target === browser) {
+          return true;
+        }
+        const owner = target?.ownerGlobal ?? target?.ownerDocument?.defaultView;
+        const context = owner?.browsingContext;
+        const paneContext = browser.browsingContext;
+        return Boolean(owner && owner !== this.win && context && paneContext &&
+          !target.ownerDocument?.nodePrincipal?.isSystemPrincipal &&
+          (context.top ?? context) === (paneContext.top ?? paneContext));
+      };
+      const pathTarget = event.composedPath?.()[0];
+      return accepts(event.target) &&
+        accepts(event.originalTarget ?? pathTarget ?? event.target) &&
+        (!pathTarget || accepts(pathTarget));
+    }
+
     getDropPlan(event) {
       if (this.destroyed || event.altKey || !event.isTrusted ||
           !this.services.prefs.getBoolPref(`${PREF_PREFIX}enabled`, true) ||
@@ -274,6 +296,9 @@
           "zen-glance-tab", "zen-live-folder-item-id"].some(name => tab.hasAttribute(name))) {
           continue;
         }
+        if (!this.isContentTarget(event, tab.linkedBrowser)) {
+          continue;
+        }
         const rect = tab.linkedBrowser.getBoundingClientRect();
         const side = chooseSide(rect, event.clientX, event.clientY, Boolean(activeGroup));
         if (!side) {
@@ -289,7 +314,10 @@
     getLink(event, validate) {
       const handler = this.services.droppedLinkHandler;
       const links = validate ? handler.dropLinks(event, true) : handler.queryLinks(event.dataTransfer);
-      return links.length === 1 && isWebURL(links[0].url) ? links[0] : null;
+      // Filter only after the native handler has processed the entire transfer.
+      // dropLinks must still security-check every nonempty entry on real drops.
+      const nonempty = links.filter(link => typeof link.url === "string" && link.url.trim());
+      return nonempty.length === 1 && isWebURL(nonempty[0].url) ? nonempty[0] : null;
     }
 
     consume(event) {

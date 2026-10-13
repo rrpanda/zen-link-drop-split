@@ -11,7 +11,7 @@ A [Sine](https://github.com/CosmoCreeper/Sine) JavaScript mod for Zen Browser. D
 - The mod respects Zen's pane limit (currently four). A full split displays “Split view is full” and refuses the drop without replacing a page.
 - Hold **Alt** while dropping to use ordinary browser/page drop behavior. **Escape** cancels the drag.
 
-Links can move between panes or originate in an iframe, provided they belong to the same browser window. The new tab uses the target pane's container and pinned state. Browser tabs, files, image drags, text selections, external drags, and multiple links use ordinary behavior. Only `http:` and `https:` links are handled. Essential tabs, Glance overlays, empty split placeholders, and live-folder items are excluded.
+Links can move between panes or originate in an iframe, provided they belong to the same browser window. The new tab uses the target pane's container and pinned state. Browser tabs, files, image drags, text selections, external drags, and multiple links use ordinary behavior. Only `http:` and `https:` links are handled. Blank URI-list lines (including trailing CRLF) are ignored when counting links; Firefox still validates the complete transfer before a tab opens. Browser chrome inputs, controls, and overlays retain ordinary drop behavior even when they overlap a pane. Essential tabs, Glance overlays, empty split placeholders, and live-folder items are excluded.
 
 ## Install with Sine
 
@@ -37,13 +37,15 @@ npm test
 npm run test:native
 ```
 
-`npm test` exercises drop-zone selection, pane targeting, transfer filtering, source-window checks, URL validation, container and pinned state, limits, preview preferences, failure cleanup, and startup/unload behavior using browser-service mocks.
+`npm test` exercises realistic URI-list CRLF/comment/blank and multiple-link payloads, page/iframe versus chrome target filtering, drop-zone selection, pane targeting, transfer filtering, source-window checks, URL validation, container and pinned state, limits, preview preferences, failure cleanup, and startup/unload behavior using browser-service mocks.
 
 `npm run test:native` downloads [Zen's splitter implementation at a pinned commit](https://github.com/zen-browser/desktop/blob/bce6a23ea7082967bc27a92ae8613a4b04f3dae3/src/zen/split-view/ZenViewSplitter.mjs) to a temporary directory and executes its real layout and tab-admission methods. Only browser UI/services are stubbed. The checks cover all four first-split directions, three/four-pane nested layouts, preservation of resized siblings, pinned tabs, and rollback after an insertion failure. An internet connection is required. To check a different Zen revision:
 
 ```sh
 ZEN_SPLITTER_REF=dev npm run test:native
 ```
+
+The [compatibility workflow](.github/workflows/compatibility.yml) runs syntax and unit checks on Node 22, plus native layout checks against both the pinned revision and current `dev`, on pushes, pull requests, manual runs, and a weekly schedule. These source checks stub browser UI services and do not establish live integration compatibility.
 
 ### Manual checks in Zen
 
@@ -58,9 +60,11 @@ Open [tests/drag-links.html](tests/drag-links.html) in the Zen window where you 
 7. Reach the pane limit and try another link. Verify no tab opens and no existing page navigates.
 8. Try an iframe link, a pinned page, a container tab, and a private window. Confirm the destination stays in the same window and retains the target container/pinned state.
 9. Try a tab drag, text selection, file/image drag, cross-window link, and Alt-drop. Verify ordinary behavior remains available.
-10. Cancel a drag or leave the content area. Verify the preview disappears. Disable the mod through Sine and verify link splitting stops.
+10. Drag the fixture’s explicit URI-list sources: trailing CRLF/comments/blank lines should open one split; two URLs and non-web URLs should retain ordinary behavior.
+11. Drag a link onto browser chrome controls and overlays, including an address-bar input, find bar, and any popup over a pane. Verify no split preview or tab opens; normal control behavior remains available. Compare a page input and an iframe content target, which remain eligible in split zones.
+12. Cancel a drag or leave the content area. Verify the preview disappears. Disable the mod through Sine and verify link splitting stops.
 
-These manual checks have not been run in a live Zen instance in this workspace. Firefox/Zen chrome drag-event delivery across remote content processes still needs live verification; the automated checks cover the handler and layout logic.
+These manual checks have not been run in a live Zen instance in this workspace: no Zen or Firefox executable was available. A Chromium preview cannot verify privileged Zen scripts. Remote-content event retargeting, source-window isolation, actual focus, Sine unload, private windows, and containers remain unverified in live Zen; automated checks cover handler and layout logic with service mocks.
 
 ## Compatibility
 
