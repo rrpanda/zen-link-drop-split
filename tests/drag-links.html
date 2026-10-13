@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Link Drop Split — manual drag checks</title>
+<style>
+  :root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; }
+  body { max-width: 720px; margin: 48px auto; padding: 0 24px; }
+  a { display: inline-block; padding: 8px 0; }
+  iframe { width: 100%; height: 110px; border: 1px solid GrayText; }
+</style>
+<h1>Link Drop Split</h1>
+<p>Open this file in Zen with the mod enabled. Drag a link to the left or right middle, or to the top or bottom of the page. Once split, drop another link in the pane you want to divide.</p>
+<ul>
+  <li><a href="https://example.com/?split-test=1">Example — first link</a></li>
+  <li><a href="https://example.org/?split-test=2">Example — second link</a></li>
+  <li><a href="https://www.mozilla.org/">Mozilla — third link</a></li>
+</ul>
+<h2>Iframe link</h2>
+<iframe title="Iframe drag source" srcdoc="<p style='font:17px system-ui;padding:12px'><a href='https://example.net/?split-test=iframe'>Drag this link from inside an iframe</a></p>"></iframe>
+<h2>Ordinary behavior checks</h2>
+<p>Select and drag this text. It should retain ordinary drop behavior. Hold Alt while dropping a web link to bypass the mod.</p>
+<p><a href="mailto:test@example.com">A mail link uses ordinary browser behavior</a></p>
+</html>

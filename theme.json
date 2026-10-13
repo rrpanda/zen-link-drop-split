@@ -1,0 +1,21 @@
+{
+  "id": "zen-link-drop-split",
+  "name": "Link Drop Split",
+  "description": "Drag links into split tabs, with subsequent drops dividing only the target pane along its longer dimension.",
+  "version": "0.1.0",
+  "author": "Zen Link Drop Split contributors",
+  "homepage": "https://github.com/rrpanda/zen-link-drop-split",
+  "readme": "https://raw.githubusercontent.com/rrpanda/zen-link-drop-split/main/README.md",
+  "createdAt": "2026-10-13",
+  "tags": ["chrome", "tabs", "split-view"],
+  "fork": ["zen"],
+  "style": { "chrome": "chrome.css" },
+  "preferences": "preferences.json",
+  "supportsUnload": true,
+  "scripts": {
+    "link-drop-split.uc.js": {
+      "include": ["chrome://browser/content/browser.xhtml"],
+      "loadOrder": 20
+    }
+  }
+}

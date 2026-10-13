@@ -1,0 +1,11 @@
+{
+  "name": "zen-link-drop-split",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Sine mod for pane-aware link drop splitting in Zen Browser.",
+  "scripts": {
+    "test": "node --test tests/link-drop-split.test.cjs",
+    "check": "node --check link-drop-split.uc.js",
+    "test:native": "node scripts/test-native.cjs"
+  }
+}

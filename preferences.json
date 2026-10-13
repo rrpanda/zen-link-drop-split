@@ -1,0 +1,14 @@
+[
+  {
+    "type": "checkbox",
+    "property": "zen.link-drop-split.enabled",
+    "defaultValue": true,
+    "label": "Open dragged links in split tabs"
+  },
+  {
+    "type": "checkbox",
+    "property": "zen.link-drop-split.preview",
+    "defaultValue": true,
+    "label": "Preview the new pane while dragging"
+  }
+]

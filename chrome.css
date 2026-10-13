@@ -1,0 +1,29 @@
+#zen-link-drop-split-preview {
+  position: fixed;
+  z-index: 2147483646;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  border: 2px solid var(--zen-primary-color, #5b8def);
+  border-radius: var(--zen-border-radius, 10px);
+  background: color-mix(in srgb, var(--zen-primary-color, #5b8def) 18%, transparent);
+  color: var(--toolbar-color, CanvasText);
+  font: 600 13px system-ui, sans-serif;
+}
+
+#zen-link-drop-split-preview[hidden] {
+  display: none !important;
+}
+
+#zen-link-drop-split-preview > span {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--zen-main-browser-background, Canvas);
+  box-shadow: 0 2px 12px #0002;
+}
+
+#zen-link-drop-split-preview[data-blocked] {
+  border-style: dashed;
+  background: color-mix(in srgb, CanvasText 8%, transparent);
+}
