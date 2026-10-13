@@ -7,6 +7,8 @@ const { spawnSync } = require("node:child_process");
 (async () => {
   const ref = process.env.ZEN_SPLITTER_REF || "bce6a23ea7082967bc27a92ae8613a4b04f3dae3";
   const sources = {
+    ZEN_WORKSPACES_SOURCE: "src/zen/spaces/ZenSpaceManager.mjs",
+    ZEN_TABBROWSER_PATCH: "src/browser/components/tabbrowser/Tabbrowser-sys-mjs.patch",
     ZEN_SPLITTER_SOURCE: "src/zen/split-view/ZenViewSplitter.mjs",
     ZEN_COMMON_ACTIONS_SOURCE: "src/zen/common/modules/ZenCommonUtils.mjs",
     ZEN_BACK_COMMANDS_PATCH: "src/browser/base/content/browser-commands-js.patch",
@@ -22,7 +24,7 @@ const { spawnSync } = require("node:child_process");
       await writeFile(file, await response.text());
       return [key, file];
     })));
-    console.log(`Testing native Zen layout and Back APIs from ${ref}`);
+    console.log(`Testing native Zen layout, workspace and Back APIs from ${ref}`);
     const result = spawnSync(process.execPath, ["--test", "tests/zen-native.test.cjs"], {
       stdio: "inherit", env: { ...process.env, ...files },
     });
