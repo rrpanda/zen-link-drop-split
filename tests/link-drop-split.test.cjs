@@ -122,8 +122,10 @@ function harness() {
       calls.listeners = calls.listeners.filter(entry => !entry.every((value, i) => value === args[i]));
     },
   };
+  browser.localName = "browser"; browser.ownerGlobal = win;
   const controller = new LinkDropController(win, services);
   const event = {
+    target: browser, originalTarget: browser, composedPath() { return [this.target, win]; },
     isTrusted: true, clientX: 1290, clientY: 480, altKey: false,
     dataTransfer: { types: ["text/x-moz-url", "text/plain"], mozItemCount: 1,
       effectAllowed: "copy", sourceTopWindowContext: { browsingContext: sourceContext } },
@@ -178,6 +180,7 @@ test("dropping into another pane targets that pane rather than the selected tab"
   } };
   h.targetTab.linkedBrowser.getBoundingClientRect = () => ({ left: 100, top: 80, width: 600, height: 800 });
   h.win.gZenViewSplitter._data.push({ tabs: [h.targetTab, other] });
+  h.event.target = h.event.originalTarget = other.linkedBrowser;
   const plan = h.controller.getDropPlan(h.event);
   assert.equal(plan.tab, other);
   assert.equal(plan.side, "bottom");
@@ -281,4 +284,97 @@ test("startup deferral attaches only to this window and can be cancelled", () =>
   early.controller.start(); early.controller.destroy();
   assert.equal(early.calls.prefRemoves.length, 0);
   assert.equal(early.calls.observerRemoves.length, 1);
+});
+
+// Mirror Firefox's URI-list and moz-url extraction, rather than pre-cleaning
+// the fixture: native URI-list parsing emits empty entries for blank lines.
+function usePayload(h, type, payload) {
+  h.event.dataTransfer.types = [type, "text/plain"];
+  h.event.dataTransfer.getData = requested => requested === type ? payload : "";
+  h.event.dataTransfer.mozTypesAt = () => ({ contains: requested => requested === type });
+  h.event.dataTransfer.mozGetDataAt = requested => h.event.dataTransfer.getData(requested);
+  h.services.droppedLinkHandler.queryLinks = transfer => {
+    const lines = transfer.mozGetDataAt(type, 0).split("\n");
+    return type === "text/uri-list" ? lines.filter(line => !line.startsWith("#"))
+      .map(line => ({ url: line.trim(), name: line.trim(), type })) :
+      lines.filter((_, index) => index % 2 === 0).map(url => ({ url, type }));
+  };
+  h.services.droppedLinkHandler.dropLinks = (event, disallow) => {
+    assert.equal(event.prevented, true);
+    assert.equal(event.stopped, true);
+    assert.equal(disallow, true);
+    const links = h.services.droppedLinkHandler.queryLinks(event.dataTransfer);
+    for (const link of links) {
+      if (link.url.trim()) h.calls.validated.push(link.url.trim());
+    }
+    return links;
+  };
+}
+
+test("native URI-list blank lines, CRLF and comments retain a single real URL", () => {
+  for (const payload of ["https://example.com/new\r\n",
+    "\r\n# comment\r\nhttps://example.com/new\r\n \t\r\n",
+    "https://example.com/new\n\n", "  https://example.com/new  \r\n"]) {
+    const h = harness(); usePayload(h, "text/uri-list", payload);
+    h.controller.onDragOver(h.event);
+    assert.equal(h.event.prevented, true);
+    h.controller.onDrop(h.event);
+    assert.equal(h.calls.added.length, 1);
+    assert.deepEqual(h.calls.validated, ["https://example.com/new"]);
+  }
+  const h = harness(); usePayload(h, "text/x-moz-url", "https://example.com/new\nExample title\n");
+  h.controller.onDrop(h.event);
+  assert.equal(h.calls.added.length, 1);
+});
+
+test("URI-list multiple real URLs, invalid schemes and blank-only payloads remain ordinary drops", () => {
+  for (const payload of ["https://example.com/one\r\nhttps://example.com/two\r\n",
+    "https://example.com/one\n# comment\njavascript:alert(1)\n",
+    "javascript:alert(1)\r\n", "file:///tmp/x\r\n", "not a URL\r\n", "# comment\n \t\r\n"]) {
+    const h = harness(); usePayload(h, "text/uri-list", payload);
+    h.controller.onDragOver(h.event); h.controller.onDrop(h.event);
+    assert.equal(h.event.prevented, undefined);
+    assert.equal(h.calls.added.length, 0);
+  }
+});
+
+test("blank filtering runs after native validation and does not hide security failures", () => {
+  const h = harness(); usePayload(h, "text/uri-list", "https://example.com/new\r\n");
+  h.services.droppedLinkHandler.dropLinks = event => {
+    assert.equal(event.prevented, true);
+    throw new Error("Native principal security rejection");
+  };
+  h.controller.onDrop(h.event);
+  assert.equal(h.calls.added.length, 0);
+  assert.equal(h.calls.errors.length, 1);
+});
+
+test("real content and iframe targets match the exact candidate pane", () => {
+  for (const iframe of [false, true]) {
+    const h = harness();
+    const top = h.targetTab.linkedBrowser.browsingContext;
+    const ownerGlobal = { browsingContext: iframe ? { top } : top };
+    const target = { localName: "input", ownerGlobal };
+    h.event.target = h.event.originalTarget = target;
+    h.controller.onDrop(h.event);
+    assert.equal(h.calls.added.length, 1);
+  }
+  const h = harness();
+  h.event.target = h.event.originalTarget = { localName: "a", ownerGlobal: { browsingContext: { top: {} } } };
+  assert.equal(h.controller.getDropPlan(h.event), null);
+});
+
+test("chrome inputs, overlays, retargeted chrome descendants and absent targets are ignored", () => {
+  for (const kind of ["input", "panel", "toolbarbutton", "missing", "original", "path", "other-browser"]) {
+    const h = harness();
+    const chrome = { localName: kind, ownerGlobal: h.win };
+    if (kind === "original") h.event.originalTarget = chrome;
+    else if (kind === "path") h.event.composedPath = () => [chrome, h.event.target, h.win];
+    else if (kind === "other-browser") h.event.target = h.event.originalTarget = { localName: "browser", ownerGlobal: h.win };
+    else h.event.target = h.event.originalTarget = kind === "missing" ? undefined : chrome;
+    h.controller.onDragOver(h.event); h.controller.onDrop(h.event);
+    assert.equal(h.event.prevented, undefined, kind);
+    assert.equal(h.calls.added.length, 0, kind);
+    assert.equal(h.controller.preview, null, kind);
+  }
 });

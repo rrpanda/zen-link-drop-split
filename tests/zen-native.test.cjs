@@ -190,6 +190,8 @@ nativeTest("dropped split tabs support native Back-to-close while preserving his
   };
   const controller = new LinkDropController({ gBrowser, gZenViewSplitter: splitter, console }, services);
   controller.onDrop({
+    target: a.linkedBrowser, originalTarget: a.linkedBrowser,
+    composedPath() { return [this.target]; },
     isTrusted: true, clientX: 300, clientY: 600,
     dataTransfer: { types: ["text/x-moz-url"], mozItemCount: 1,
       effectAllowed: "copy", sourceTopWindowContext: { browsingContext: sourceContext } },
